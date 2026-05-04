@@ -26,6 +26,7 @@
   .trend-up{color:#16a34a;font-size:11px;font-weight:700;}
   .trend-eq{color:#64748b;font-size:11px;}
   .trend-dn{color:#dc2626;font-size:11px;font-weight:700;}
+  .cardio-card{background:#f0f9ff;border:1px solid #bae6fd;border-radius:14px;padding:14px 16px;margin-bottom:10px;}
 </style>
 </head>
 <body>
@@ -38,7 +39,7 @@ const{useState,useEffect,useRef}=React,h=React.createElement;
 const TYPES=["Gambe","Braccia","Spalle","Petto","Dorso","Personalizzato"];
 const TH={
   Gambe:         {a:"#639922",bg:"#EAF3DE",tx:"#27500A"},
-  Braccia:       {a:"#378ADD",bg:"#E6F1FB",tx:"#0C447C"},
+  Braccia:       {a:"#378ADD",bg:"#E6F1FB",tx:"#0C447B"},
   Spalle:        {a:"#EF9F27",bg:"#FAEEDA",tx:"#633806"},
   Petto:         {a:"#D85A30",bg:"#FAECE7",tx:"#4A1B0C"},
   Dorso:         {a:"#7F77DD",bg:"#EEEDFE",tx:"#3C3489"},
@@ -54,7 +55,6 @@ function fmtDateLabel(ds){const[y,m,d]=ds.split("-");return`${d}/${m}/${y}`;}
 function loadLS(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch{return d;}}
 function saveLS(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
 
-// Returns max kg ever lifted for an exercise name across all workouts
 function getPersonalBest(workouts,exName){
   let best=0;
   workouts.forEach(w=>w.exercises.forEach(ex=>{
@@ -63,24 +63,13 @@ function getPersonalBest(workouts,exName){
   }));
   return best;
 }
-
-// Returns the last N workouts of a given type (excluding current id)
 function getLastSessions(workouts,type,n=2){
-  return workouts
-    .filter(w=>w.type===type)
-    .sort((a,b)=>b.id-a.id)
-    .slice(0,n);
+  return workouts.filter(w=>w.type===type).sort((a,b)=>b.id-a.id).slice(0,n);
 }
-
-// For a given exercise name, returns trend: 'up','eq','dn' or null
 function getTrend(workouts,activeExercises,exName){
-  const currentMax=activeExercises
-    .filter(ex=>ex.name.toLowerCase()===exName.toLowerCase())
-    .flatMap(ex=>ex.sets).reduce((m,s)=>Math.max(m,s.kg),0);
+  const currentMax=activeExercises.filter(ex=>ex.name.toLowerCase()===exName.toLowerCase()).flatMap(ex=>ex.sets).reduce((m,s)=>Math.max(m,s.kg),0);
   if(!currentMax)return null;
-  const prevMax=workouts
-    .flatMap(w=>w.exercises.filter(ex=>ex.name.toLowerCase()===exName.toLowerCase()))
-    .flatMap(ex=>ex.sets).reduce((m,s)=>Math.max(m,s.kg),0);
+  const prevMax=workouts.flatMap(w=>w.exercises.filter(ex=>ex.name.toLowerCase()===exName.toLowerCase())).flatMap(ex=>ex.sets).reduce((m,s)=>Math.max(m,s.kg),0);
   if(!prevMax)return null;
   if(currentMax>prevMax)return"up";
   if(currentMax===prevMax)return"eq";
@@ -127,19 +116,24 @@ function HistoryPanel({sessions,accentColor,bg,tx}){
   return h("div",{style:{background:bg,border:`1px solid ${accentColor}30`,borderRadius:14,marginBottom:14,overflow:"hidden"}},
     h("button",{onClick:()=>setOpen(o=>!o),style:{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit"}},
       h("span",{style:{fontWeight:600,fontSize:14,color:tx}},"Ultime "+(sessions.length===1?"sessione":"2 sessioni")),
-      h("span",{style:{color:tx,fontSize:16,transition:"transform .2s",transform:open?"rotate(180deg)":"rotate(0deg)"}},"▾")
+      h("span",{style:{color:tx,fontSize:16,transform:open?"rotate(180deg)":"rotate(0deg)",display:"inline-block",transition:"transform .2s"}},"▾")
     ),
     open&&h("div",{style:{padding:"0 14px 12px"}},
       sessions.map((s,si)=>
         h("div",{key:si,style:{marginBottom:si<sessions.length-1?14:0}},
-          h("p",{style:{fontSize:12,fontWeight:700,color:tx,marginBottom:6}},fmtDateLabel(s.date)+(s.duration?`  ·  ${fmtMin(s.duration)}`:"")+(s.calories?`  ·  ${s.calories} kcal`:"")),
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
+            h("p",{style:{fontSize:12,fontWeight:700,color:tx}},fmtDateLabel(s.date)),
+            h("div",{style:{display:"flex",gap:8}},
+              s.duration&&h("span",{style:{fontSize:11,color:tx,opacity:.8}},fmtMin(s.duration)),
+              s.calories&&h("span",{style:{fontSize:11,color:tx,opacity:.8}},`${s.calories}kcal`),
+              s.cardio&&h("span",{style:{fontSize:11,color:"#0369a1",background:"#e0f2fe",borderRadius:6,padding:"1px 6px",fontWeight:600}},`Cardio ${s.cardio}m`)
+            )
+          ),
           s.exercises.map((ex,ei)=>
             h("div",{key:ei,className:"hist-row"},
               h("span",{style:{fontSize:13,fontWeight:500,color:tx,flexShrink:0,marginRight:10}},ex.name),
               h("div",{style:{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}},
-                ex.sets.map((set,si2)=>
-                  h("span",{key:si2,style:{fontSize:12,color:tx,opacity:.85}},`${set.kg}×${set.reps}`)
-                )
+                ex.sets.map((set,si2)=>h("span",{key:si2,style:{fontSize:12,color:tx,opacity:.85}},`${set.kg}×${set.reps}`))
               )
             )
           )
@@ -162,28 +156,25 @@ function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
   const filtered=exName?suggs.filter(s=>s.toLowerCase().includes(exName.toLowerCase())):suggs;
   const lastSessions=getLastSessions(allWorkouts,active.type,2);
 
+  // cardio state — null = non aggiunto, numero = minuti
+  const cardio=active.cardio??null;
+  function setCardio(val){setActive({...active,cardio:val});}
+
   function doAddEx(){
     if(!exName.trim()||!exKg||!exReps)return;
-    const ex={name:exName.trim(),sets:[{kg:parseFloat(exKg),reps:parseInt(exReps)}]};
-    setActive({...active,exercises:[...active.exercises,ex]});
+    setActive({...active,exercises:[...active.exercises,{name:exName.trim(),sets:[{kg:parseFloat(exKg),reps:parseInt(exReps)}]}]});
     setExName("");setExKg("");setExReps("");setAddEx(false);setShowSugg(false);
   }
   function openAddSet(i){const last=active.exercises[i].sets.slice(-1)[0];setAddSet({i,kg:String(last.kg),reps:String(last.reps)});}
   function doAddSet(){
     const{i,kg,reps}=addSet;
-    const exercises=active.exercises.map((ex,idx)=>idx!==i?ex:{...ex,sets:[...ex.sets,{kg:parseFloat(kg),reps:parseInt(reps)}]});
-    setActive({...active,exercises});setAddSet(null);
+    setActive({...active,exercises:active.exercises.map((ex,idx)=>idx!==i?ex:{...ex,sets:[...ex.sets,{kg:parseFloat(kg),reps:parseInt(reps)}]})});
+    setAddSet(null);
   }
   function delSet(ei,si){
-    const exercises=active.exercises.map((ex,i)=>i!==ei?ex:{...ex,sets:ex.sets.filter((_,j)=>j!==si)}).filter(ex=>ex.sets.length>0);
-    setActive({...active,exercises});
+    setActive({...active,exercises:active.exercises.map((ex,i)=>i!==ei?ex:{...ex,sets:ex.sets.filter((_,j)=>j!==si)}).filter(ex=>ex.sets.length>0)});
   }
-
-  // Check if a set's kg is a personal best
-  function isPB(exName,kg){
-    const prevBest=getPersonalBest(allWorkouts,exName);
-    return kg>0&&kg>=prevBest&&prevBest>0;
-  }
+  function isPB(exName,kg){const pb=getPersonalBest(allWorkouts,exName);return kg>0&&kg>=pb&&pb>0;}
 
   return h("div",null,
     h("div",{style:{background:t.bg,borderBottom:`2px solid ${t.a}`,padding:"14px 16px"}},
@@ -197,37 +188,29 @@ function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
     ),
     h("div",{style:{padding:"14px 16px"}},
 
-      // History panel
       h(HistoryPanel,{sessions:lastSessions,accentColor:t.a,bg:t.bg,tx:t.tx}),
 
-      // Current exercises
+      // Exercises
       active.exercises.map((ex,ei)=>{
         const trend=getTrend(allWorkouts,active.exercises,ex.name);
-        const trendEl=trend==="up"?h("span",{className:"trend-up"},"▲ PB")
-          :trend==="eq"?h("span",{className:"trend-eq"},"= Uguale")
-          :trend==="dn"?h("span",{className:"trend-dn"},"▼ Meno")
-          :null;
+        const trendEl=trend==="up"?h("span",{className:"trend-up"},"▲ PB"):trend==="eq"?h("span",{className:"trend-eq"},"= Uguale"):trend==="dn"?h("span",{className:"trend-dn"},"▼ Meno"):null;
         return h("div",{key:ei,className:"card",style:{borderLeft:`3px solid ${t.a}`}},
           h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
             h("div",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
-              h("span",{style:{fontWeight:600,fontSize:15}},ex.name),
-              trendEl
+              h("span",{style:{fontWeight:600,fontSize:15}},ex.name),trendEl
             ),
             h("button",{className:"btn",onClick:()=>openAddSet(ei),style:{padding:"5px 12px",fontSize:13,background:t.a,color:"#fff",border:"none",flexShrink:0}},"+  serie")
           ),
           h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
-            ex.sets.map((set,si)=>
-              h("span",{key:si,onClick:()=>delSet(ei,si),style:{background:t.bg,color:t.tx,border:`1px solid ${t.a}40`,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:600,cursor:"pointer",position:"relative"}},
-                `${set.kg}kg × ${set.reps}`,
-                isPB(ex.name,set.kg)&&h("span",{className:"pb-badge"},"PB")
-              )
-            )
+            ex.sets.map((set,si)=>h("span",{key:si,onClick:()=>delSet(ei,si),style:{background:t.bg,color:t.tx,border:`1px solid ${t.a}40`,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:600,cursor:"pointer"}},
+              `${set.kg}kg × ${set.reps}`,isPB(ex.name,set.kg)&&h("span",{className:"pb-badge"},"PB")
+            ))
           ),
           h("p",{style:{fontSize:11,color:"#94a3b8",marginTop:6}},"Tocca una serie per rimuoverla")
         );
       }),
 
-      // Add set panel
+      // Add set
       addSet!==null&&h("div",{className:"card",style:{border:`1px solid ${t.a}`}},
         h("p",{style:{fontWeight:600,fontSize:14,marginBottom:12}},`Nuova serie — ${active.exercises[addSet.i]?.name}`),
         h("div",{className:"g2",style:{marginBottom:10}},
@@ -250,8 +233,7 @@ function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
             filtered.slice(0,5).map((sg,i)=>{
               const pb=getPersonalBest(allWorkouts,sg);
               return h("div",{key:i,onMouseDown:()=>{setExName(sg);setShowSugg(false);},style:{padding:"10px 13px",fontSize:14,cursor:"pointer",borderBottom:i<Math.min(filtered.length,5)-1?"1px solid #f1f5f9":"none",display:"flex",justifyContent:"space-between",alignItems:"center"}},
-                h("span",null,sg),
-                pb>0&&h("span",{style:{fontSize:11,color:"#94a3b8"}},`Max: ${pb}kg`)
+                h("span",null,sg),pb>0&&h("span",{style:{fontSize:11,color:"#94a3b8"}},`Max: ${pb}kg`)
               );
             })
           )
@@ -266,7 +248,22 @@ function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
         )
       ):h("button",{className:"btn btn-w",onClick:()=>setAddEx(true),style:{marginBottom:10,border:`1px dashed ${t.a}`,color:t.a,background:"transparent"}},"+  Aggiungi esercizio"),
 
-      active.exercises.length>0&&h("button",{className:"btn btn-w",onClick:onFinish,style:{marginTop:4,background:"#0f172a",color:"#fff",border:"none",padding:"13px",fontWeight:600,fontSize:15}},"Termina allenamento")
+      // ── CARDIO ──
+      cardio===null
+        ? h("button",{className:"btn btn-w",onClick:()=>setCardio(0),style:{marginBottom:10,border:"1px dashed #0ea5e9",color:"#0ea5e9",background:"transparent"}},"+  Cardio")
+        : h("div",{className:"cardio-card"},
+            h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
+              h("span",{style:{fontWeight:600,fontSize:15,color:"#0369a1"}},"Cardio"),
+              h("button",{onClick:()=>setCardio(null),style:{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:18,lineHeight:1}},"×")
+            ),
+            h("div",{style:{display:"flex",alignItems:"center",gap:12}},
+              h("input",{className:"inp",type:"number",value:cardio||"",placeholder:"Minuti",onChange:e=>setCardio(parseInt(e.target.value)||0),style:{flex:1,fontSize:20,fontWeight:700,textAlign:"center"}}),
+              h("span",{style:{fontSize:15,color:"#0369a1",fontWeight:500,whiteSpace:"nowrap"}},"minuti")
+            )
+          ),
+
+      // Finish
+      (active.exercises.length>0||cardio>0)&&h("button",{className:"btn btn-w",onClick:onFinish,style:{marginTop:4,background:"#0f172a",color:"#fff",border:"none",padding:"13px",fontWeight:600,fontSize:15}},"Termina allenamento")
     )
   );
 }
@@ -283,16 +280,26 @@ function Finish({active,onSave,onBack}){
       h("p",{style:{fontWeight:600,fontSize:17}},"Fine allenamento")
     ),
     h("div",{className:"card",style:{background:t.bg,border:`1px solid ${t.a}30`,marginBottom:14}},
-      h("p",{style:{fontWeight:600,color:t.tx,marginBottom:10}},`Riepilogo ${active.type}`),
-      h("div",{className:"g2"},
-        h("div",{style:{textAlign:"center",padding:"10px 0"}},h("div",{style:{fontSize:22,fontWeight:700,color:t.tx}},active.exercises.length),h("div",{style:{fontSize:12,color:t.tx,opacity:.7}},"Esercizi")),
-        h("div",{style:{textAlign:"center",padding:"10px 0"}},h("div",{style:{fontSize:22,fontWeight:700,color:t.tx}},totalSets),h("div",{style:{fontSize:12,color:t.tx,opacity:.7}},"Serie totali"))
+      h("p",{style:{fontWeight:600,color:t.tx,marginBottom:12}},`Riepilogo ${active.type}`),
+      h("div",{style:{display:"grid",gridTemplateColumns:`repeat(${active.cardio>0?3:2},1fr)`,gap:8}},
+        h("div",{style:{textAlign:"center",padding:"10px 0"}},
+          h("div",{style:{fontSize:22,fontWeight:700,color:t.tx}},active.exercises.length),
+          h("div",{style:{fontSize:12,color:t.tx,opacity:.7}},"Esercizi")
+        ),
+        h("div",{style:{textAlign:"center",padding:"10px 0"}},
+          h("div",{style:{fontSize:22,fontWeight:700,color:t.tx}},totalSets),
+          h("div",{style:{fontSize:12,color:t.tx,opacity:.7}},"Serie")
+        ),
+        active.cardio>0&&h("div",{style:{textAlign:"center",padding:"10px 0"}},
+          h("div",{style:{fontSize:22,fontWeight:700,color:"#0369a1"}},active.cardio),
+          h("div",{style:{fontSize:12,color:"#0369a1",opacity:.8}},"min cardio")
+        )
       )
     ),
     h("div",{className:"card"},
       h("p",{style:{fontWeight:600,marginBottom:14}},"Dati allenamento"),
-      h("div",{style:{marginBottom:12}},h("label",{className:"lbl"},"Durata (minuti)"),h("input",{className:"inp",type:"number",value:dur,placeholder:"es. 60",onChange:e=>setDur(e.target.value)})),
-      h("div",null,h("label",{className:"lbl"},"Calorie bruciate (kcal)"),h("input",{className:"inp",type:"number",value:kcal,placeholder:"es. 350",onChange:e=>setKcal(e.target.value)}))
+      h("div",{style:{marginBottom:12}},h("label",{className:"lbl"},"Durata totale (minuti)"),h("input",{className:"inp",type:"number",value:dur,placeholder:"es. 75",onChange:e=>setDur(e.target.value)})),
+      h("div",null,h("label",{className:"lbl"},"Calorie bruciate (kcal)"),h("input",{className:"inp",type:"number",value:kcal,placeholder:"es. 400",onChange:e=>setKcal(e.target.value)}))
     ),
     h("button",{className:"btn btn-w",onClick:()=>onSave(parseInt(dur)||0,parseInt(kcal)||0),style:{background:t.a,color:"#fff",border:"none",padding:"13px",fontWeight:600,fontSize:15}},"Salva allenamento")
   );
@@ -346,10 +353,12 @@ function Cal({workouts,onBack}){
         ...wk.map((day,di)=>{
           const dws=getDW(day),ds=day?dateStr(yr,mo,day):null;
           const isToday=ds===today,isSel=sel===day&&day;
+          const hasCardio=dws.some(w=>w.cardio>0);
           return h("div",{key:di,onClick:()=>day&&setSel(isSel?null:day),style:{minHeight:46,borderRadius:10,padding:"4px 2px",cursor:day?"pointer":"default",display:"flex",flexDirection:"column",alignItems:"center",background:isSel?"#dbeafe":(isToday?"#f0fdf4":"#fff"),border:isToday?"1.5px solid #22c55e":"1px solid #e2e8f0"}},
             day&&h("span",{style:{fontSize:12,fontWeight:isToday?700:400,color:isSel?"#1d4ed8":(isToday?"#166534":"#1e293b")}},day),
             day&&h("div",{style:{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:2,marginTop:2}},
-              dws.map((w,i)=>h("div",{key:i,style:{width:6,height:6,borderRadius:"50%",background:TH[w.type]?.a}}))
+              dws.map((w,i)=>h("div",{key:i,style:{width:6,height:6,borderRadius:"50%",background:TH[w.type]?.a}})),
+              hasCardio&&h("div",{style:{width:6,height:6,borderRadius:"50%",background:"#0ea5e9"}})
             )
           );
         }),
@@ -363,7 +372,11 @@ function Cal({workouts,onBack}){
       TYPES.map(type=>h("div",{key:type,style:{display:"flex",alignItems:"center",gap:4}},
         h("div",{style:{width:8,height:8,borderRadius:"50%",background:TH[type].a}}),
         h("span",{style:{fontSize:11,color:"#64748b"}},type)
-      ))
+      )),
+      h("div",{style:{display:"flex",alignItems:"center",gap:4}},
+        h("div",{style:{width:8,height:8,borderRadius:"50%",background:"#0ea5e9"}}),
+        h("span",{style:{fontSize:11,color:"#64748b"}},"Cardio")
+      )
     ),
     sel&&h("div",{className:"card",style:{borderTop:"3px solid #3b82f6",marginTop:4}},
       h("p",{style:{fontWeight:600,fontSize:15,marginBottom:12}},`${String(sel).padStart(2,"0")}/${String(mo+1).padStart(2,"0")}/${yr}`),
@@ -373,7 +386,10 @@ function Cal({workouts,onBack}){
         return h("div",{key:i,style:{marginBottom:i<selWks.length-1?14:0,borderLeft:`3px solid ${t.a}`,paddingLeft:12}},
           h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
             h("span",{style:{fontWeight:600,fontSize:14}},w.type),
-            h("span",{style:{fontSize:12,color:"#64748b"}},`${w.duration?fmtMin(w.duration):""}${w.duration&&w.calories?" · ":""}${w.calories?w.calories+" kcal":""}`)
+            h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+              w.cardio>0&&h("span",{style:{fontSize:11,background:"#e0f2fe",color:"#0369a1",borderRadius:6,padding:"2px 7px",fontWeight:600}},`Cardio ${w.cardio}m`),
+              h("span",{style:{fontSize:12,color:"#64748b"}},`${w.duration?fmtMin(w.duration):""}${w.duration&&w.calories?" · ":""}${w.calories?w.calories+" kcal":""}`)
+            )
           ),
           ...w.exercises.map((ex,ei)=>h("div",{key:ei,style:{marginBottom:6}},
             h("span",{style:{fontSize:13,fontWeight:600}},ex.name),
@@ -396,7 +412,7 @@ function GymApp(){
 
   function saveW(data){setWorkouts(data);saveLS("gym_w",data);}
   function saveE(data){setLib(data);saveLS("gym_e",data);}
-  function start(type){setActive({id:Date.now(),date:todayStr(),type,exercises:[]});setScreen("workout");}
+  function start(type){setActive({id:Date.now(),date:todayStr(),type,exercises:[],cardio:null});setScreen("workout");}
   function finish(dur,kcal){
     const w={...active,duration:dur,calories:kcal};
     const nw=[...workouts,w];saveW(nw);
