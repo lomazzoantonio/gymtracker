@@ -27,6 +27,8 @@
   .trend-eq{color:#64748b;font-size:11px;}
   .trend-dn{color:#dc2626;font-size:11px;font-weight:700;}
   .cardio-card{background:#f0f9ff;border:1px solid #bae6fd;border-radius:14px;padding:14px 16px;margin-bottom:10px;}
+  .confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:100;}
+  .confirm-sheet{background:#fff;width:100%;max-width:430px;border-radius:20px 20px 0 0;padding:24px 20px 36px;}
 </style>
 </head>
 <body>
@@ -34,12 +36,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script>
-const{useState,useEffect,useRef}=React,h=React.createElement;
+const{useState,useRef}=React,h=React.createElement;
 
 const TYPES=["Gambe","Braccia","Spalle","Petto","Dorso","Personalizzato"];
 const TH={
   Gambe:         {a:"#639922",bg:"#EAF3DE",tx:"#27500A"},
-  Braccia:       {a:"#378ADD",bg:"#E6F1FB",tx:"#0C447B"},
+  Braccia:       {a:"#378ADD",bg:"#E6F1FB",tx:"#0C447C"},
   Spalle:        {a:"#EF9F27",bg:"#FAEEDA",tx:"#633806"},
   Petto:         {a:"#D85A30",bg:"#FAECE7",tx:"#4A1B0C"},
   Dorso:         {a:"#7F77DD",bg:"#EEEDFE",tx:"#3C3489"},
@@ -55,25 +57,36 @@ function fmtDateLabel(ds){const[y,m,d]=ds.split("-");return`${d}/${m}/${y}`;}
 function loadLS(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch{return d;}}
 function saveLS(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
 
-function getPersonalBest(workouts,exName){
+function getPersonalBest(workouts,exName,excludeId=null){
   let best=0;
-  workouts.forEach(w=>w.exercises.forEach(ex=>{
-    if(ex.name.toLowerCase()===exName.toLowerCase())
-      ex.sets.forEach(s=>{if(s.kg>best)best=s.kg;});
+  workouts.filter(w=>w.id!==excludeId).forEach(w=>w.exercises.forEach(ex=>{
+    if(ex.name.toLowerCase()===exName.toLowerCase())ex.sets.forEach(s=>{if(s.kg>best)best=s.kg;});
   }));
   return best;
 }
-function getLastSessions(workouts,type,n=2){
-  return workouts.filter(w=>w.type===type).sort((a,b)=>b.id-a.id).slice(0,n);
+function getLastSessions(workouts,type,excludeId=null,n=2){
+  return workouts.filter(w=>w.type===type&&w.id!==excludeId).sort((a,b)=>b.id-a.id).slice(0,n);
 }
-function getTrend(workouts,activeExercises,exName){
-  const currentMax=activeExercises.filter(ex=>ex.name.toLowerCase()===exName.toLowerCase()).flatMap(ex=>ex.sets).reduce((m,s)=>Math.max(m,s.kg),0);
-  if(!currentMax)return null;
-  const prevMax=workouts.flatMap(w=>w.exercises.filter(ex=>ex.name.toLowerCase()===exName.toLowerCase())).flatMap(ex=>ex.sets).reduce((m,s)=>Math.max(m,s.kg),0);
-  if(!prevMax)return null;
-  if(currentMax>prevMax)return"up";
-  if(currentMax===prevMax)return"eq";
-  return"dn";
+function getTrend(workouts,activeExercises,exName,excludeId){
+  const cur=activeExercises.filter(ex=>ex.name.toLowerCase()===exName.toLowerCase()).flatMap(ex=>ex.sets).reduce((m,s)=>Math.max(m,s.kg),0);
+  if(!cur)return null;
+  const prev=workouts.filter(w=>w.id!==excludeId).flatMap(w=>w.exercises.filter(ex=>ex.name.toLowerCase()===exName.toLowerCase())).flatMap(ex=>ex.sets).reduce((m,s)=>Math.max(m,s.kg),0);
+  if(!prev)return null;
+  return cur>prev?"up":cur===prev?"eq":"dn";
+}
+
+// ── CONFIRM DIALOG ──
+function ConfirmSheet({title,msg,confirmLabel,confirmColor,onConfirm,onCancel}){
+  return h("div",{className:"confirm-overlay",onClick:onCancel},
+    h("div",{className:"confirm-sheet",onClick:e=>e.stopPropagation()},
+      h("p",{style:{fontWeight:700,fontSize:17,marginBottom:8}},title),
+      h("p",{style:{fontSize:14,color:"#64748b",marginBottom:24}},msg),
+      h("div",{className:"g2"},
+        h("button",{className:"btn btn-w",onClick:onCancel},"Annulla"),
+        h("button",{className:"btn btn-w",onClick:onConfirm,style:{background:confirmColor||"#ef4444",color:"#fff",border:"none"}},confirmLabel||"Conferma")
+      )
+    )
+  );
 }
 
 // ── HOME ──
@@ -116,7 +129,7 @@ function HistoryPanel({sessions,accentColor,bg,tx}){
   return h("div",{style:{background:bg,border:`1px solid ${accentColor}30`,borderRadius:14,marginBottom:14,overflow:"hidden"}},
     h("button",{onClick:()=>setOpen(o=>!o),style:{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit"}},
       h("span",{style:{fontWeight:600,fontSize:14,color:tx}},"Ultime "+(sessions.length===1?"sessione":"2 sessioni")),
-      h("span",{style:{color:tx,fontSize:16,transform:open?"rotate(180deg)":"rotate(0deg)",display:"inline-block",transition:"transform .2s"}},"▾")
+      h("span",{style:{color:tx,fontSize:16,display:"inline-block",transform:open?"rotate(180deg)":"rotate(0)"}},"▾")
     ),
     open&&h("div",{style:{padding:"0 14px 12px"}},
       sessions.map((s,si)=>
@@ -126,7 +139,7 @@ function HistoryPanel({sessions,accentColor,bg,tx}){
             h("div",{style:{display:"flex",gap:8}},
               s.duration&&h("span",{style:{fontSize:11,color:tx,opacity:.8}},fmtMin(s.duration)),
               s.calories&&h("span",{style:{fontSize:11,color:tx,opacity:.8}},`${s.calories}kcal`),
-              s.cardio&&h("span",{style:{fontSize:11,color:"#0369a1",background:"#e0f2fe",borderRadius:6,padding:"1px 6px",fontWeight:600}},`Cardio ${s.cardio}m`)
+              s.cardio>0&&h("span",{style:{fontSize:11,color:"#0369a1",background:"#e0f2fe",borderRadius:6,padding:"1px 6px",fontWeight:600}},`Cardio ${s.cardio}m`)
             )
           ),
           s.exercises.map((ex,ei)=>
@@ -144,7 +157,7 @@ function HistoryPanel({sessions,accentColor,bg,tx}){
 }
 
 // ── WORKOUT ──
-function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
+function Workout({active,setActive,lib,allWorkouts,editingId,onFinish,onBack}){
   const[addEx,setAddEx]=useState(false);
   const[addSet,setAddSet]=useState(null);
   const[exName,setExName]=useState("");
@@ -154,9 +167,7 @@ function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
   const t=TH[active.type];
   const suggs=lib[active.type]||[];
   const filtered=exName?suggs.filter(s=>s.toLowerCase().includes(exName.toLowerCase())):suggs;
-  const lastSessions=getLastSessions(allWorkouts,active.type,2);
-
-  // cardio state — null = non aggiunto, numero = minuti
+  const lastSessions=getLastSessions(allWorkouts,active.type,editingId,2);
   const cardio=active.cardio??null;
   function setCardio(val){setActive({...active,cardio:val});}
 
@@ -174,25 +185,22 @@ function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
   function delSet(ei,si){
     setActive({...active,exercises:active.exercises.map((ex,i)=>i!==ei?ex:{...ex,sets:ex.sets.filter((_,j)=>j!==si)}).filter(ex=>ex.sets.length>0)});
   }
-  function isPB(exName,kg){const pb=getPersonalBest(allWorkouts,exName);return kg>0&&kg>=pb&&pb>0;}
+  function isPB(exName,kg){const pb=getPersonalBest(allWorkouts,exName,editingId);return kg>0&&kg>=pb&&pb>0;}
 
   return h("div",null,
     h("div",{style:{background:t.bg,borderBottom:`2px solid ${t.a}`,padding:"14px 16px"}},
       h("div",{style:{display:"flex",alignItems:"center",gap:10}},
         h("button",{className:"btn",onClick:onBack,style:{padding:"6px 12px",background:"transparent",border:`1px solid ${t.a}`,color:t.tx}},"←"),
         h("div",null,
-          h("p",{style:{fontWeight:600,fontSize:17,color:t.tx}},`Allenamento ${active.type}`),
+          h("p",{style:{fontWeight:600,fontSize:17,color:t.tx}},editingId?"Modifica — "+active.type:`Allenamento ${active.type}`),
           h("p",{style:{fontSize:12,color:t.tx,opacity:.7,marginTop:2}},active.date)
         )
       )
     ),
     h("div",{style:{padding:"14px 16px"}},
-
       h(HistoryPanel,{sessions:lastSessions,accentColor:t.a,bg:t.bg,tx:t.tx}),
-
-      // Exercises
       active.exercises.map((ex,ei)=>{
-        const trend=getTrend(allWorkouts,active.exercises,ex.name);
+        const trend=getTrend(allWorkouts,active.exercises,ex.name,editingId);
         const trendEl=trend==="up"?h("span",{className:"trend-up"},"▲ PB"):trend==="eq"?h("span",{className:"trend-eq"},"= Uguale"):trend==="dn"?h("span",{className:"trend-dn"},"▼ Meno"):null;
         return h("div",{key:ei,className:"card",style:{borderLeft:`3px solid ${t.a}`}},
           h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
@@ -209,8 +217,6 @@ function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
           h("p",{style:{fontSize:11,color:"#94a3b8",marginTop:6}},"Tocca una serie per rimuoverla")
         );
       }),
-
-      // Add set
       addSet!==null&&h("div",{className:"card",style:{border:`1px solid ${t.a}`}},
         h("p",{style:{fontWeight:600,fontSize:14,marginBottom:12}},`Nuova serie — ${active.exercises[addSet.i]?.name}`),
         h("div",{className:"g2",style:{marginBottom:10}},
@@ -222,8 +228,6 @@ function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
           h("button",{className:"btn btn-w",onClick:doAddSet,style:{background:t.a,color:"#fff",border:"none"}},"Conferma")
         )
       ),
-
-      // Add exercise
       addEx?h("div",{className:"card",style:{border:`1px solid ${t.a}`}},
         h("p",{style:{fontWeight:600,fontSize:14,marginBottom:12}},"Nuovo esercizio"),
         h("div",{style:{position:"relative",marginBottom:10}},
@@ -231,7 +235,7 @@ function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
           h("input",{className:"inp",value:exName,placeholder:"es. Squat",onChange:e=>{setExName(e.target.value);setShowSugg(true);},onFocus:()=>setShowSugg(true),onBlur:()=>setTimeout(()=>setShowSugg(false),160)}),
           showSugg&&filtered.length>0&&h("div",{style:{background:"#fff",border:"1px solid #e2e8f0",borderRadius:10,marginTop:4,zIndex:10,boxShadow:"0 4px 12px rgba(0,0,0,.08)"}},
             filtered.slice(0,5).map((sg,i)=>{
-              const pb=getPersonalBest(allWorkouts,sg);
+              const pb=getPersonalBest(allWorkouts,sg,editingId);
               return h("div",{key:i,onMouseDown:()=>{setExName(sg);setShowSugg(false);},style:{padding:"10px 13px",fontSize:14,cursor:"pointer",borderBottom:i<Math.min(filtered.length,5)-1?"1px solid #f1f5f9":"none",display:"flex",justifyContent:"space-between",alignItems:"center"}},
                 h("span",null,sg),pb>0&&h("span",{style:{fontSize:11,color:"#94a3b8"}},`Max: ${pb}kg`)
               );
@@ -247,53 +251,40 @@ function Workout({active,setActive,lib,allWorkouts,onFinish,onBack}){
           h("button",{className:"btn btn-w",onClick:doAddEx,style:{background:t.a,color:"#fff",border:"none"}},"Aggiungi")
         )
       ):h("button",{className:"btn btn-w",onClick:()=>setAddEx(true),style:{marginBottom:10,border:`1px dashed ${t.a}`,color:t.a,background:"transparent"}},"+  Aggiungi esercizio"),
-
-      // ── CARDIO ──
       cardio===null
-        ? h("button",{className:"btn btn-w",onClick:()=>setCardio(0),style:{marginBottom:10,border:"1px dashed #0ea5e9",color:"#0ea5e9",background:"transparent"}},"+  Cardio")
-        : h("div",{className:"cardio-card"},
+        ?h("button",{className:"btn btn-w",onClick:()=>setCardio(0),style:{marginBottom:10,border:"1px dashed #0ea5e9",color:"#0ea5e9",background:"transparent"}},"+  Cardio")
+        :h("div",{className:"cardio-card"},
             h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
               h("span",{style:{fontWeight:600,fontSize:15,color:"#0369a1"}},"Cardio"),
-              h("button",{onClick:()=>setCardio(null),style:{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:18,lineHeight:1}},"×")
+              h("button",{onClick:()=>setCardio(null),style:{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:18}},"×")
             ),
             h("div",{style:{display:"flex",alignItems:"center",gap:12}},
               h("input",{className:"inp",type:"number",value:cardio||"",placeholder:"Minuti",onChange:e=>setCardio(parseInt(e.target.value)||0),style:{flex:1,fontSize:20,fontWeight:700,textAlign:"center"}}),
               h("span",{style:{fontSize:15,color:"#0369a1",fontWeight:500,whiteSpace:"nowrap"}},"minuti")
             )
           ),
-
-      // Finish
-      (active.exercises.length>0||cardio>0)&&h("button",{className:"btn btn-w",onClick:onFinish,style:{marginTop:4,background:"#0f172a",color:"#fff",border:"none",padding:"13px",fontWeight:600,fontSize:15}},"Termina allenamento")
+      (active.exercises.length>0||cardio>0)&&h("button",{className:"btn btn-w",onClick:onFinish,style:{marginTop:4,background:"#0f172a",color:"#fff",border:"none",padding:"13px",fontWeight:600,fontSize:15}},editingId?"Salva modifiche":"Termina allenamento")
     )
   );
 }
 
 // ── FINISH ──
-function Finish({active,onSave,onBack}){
-  const[dur,setDur]=useState("");
-  const[kcal,setKcal]=useState("");
+function Finish({active,editingId,onSave,onBack}){
+  const[dur,setDur]=useState(active.duration?String(active.duration):"");
+  const[kcal,setKcal]=useState(active.calories?String(active.calories):"");
   const t=TH[active.type];
   const totalSets=active.exercises.reduce((s,ex)=>s+ex.sets.length,0);
   return h("div",{style:{padding:"20px 16px"}},
     h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:20}},
       h("button",{className:"btn",onClick:onBack,style:{padding:"6px 12px"}},"←"),
-      h("p",{style:{fontWeight:600,fontSize:17}},"Fine allenamento")
+      h("p",{style:{fontWeight:600,fontSize:17}},editingId?"Modifica dati":"Fine allenamento")
     ),
     h("div",{className:"card",style:{background:t.bg,border:`1px solid ${t.a}30`,marginBottom:14}},
       h("p",{style:{fontWeight:600,color:t.tx,marginBottom:12}},`Riepilogo ${active.type}`),
       h("div",{style:{display:"grid",gridTemplateColumns:`repeat(${active.cardio>0?3:2},1fr)`,gap:8}},
-        h("div",{style:{textAlign:"center",padding:"10px 0"}},
-          h("div",{style:{fontSize:22,fontWeight:700,color:t.tx}},active.exercises.length),
-          h("div",{style:{fontSize:12,color:t.tx,opacity:.7}},"Esercizi")
-        ),
-        h("div",{style:{textAlign:"center",padding:"10px 0"}},
-          h("div",{style:{fontSize:22,fontWeight:700,color:t.tx}},totalSets),
-          h("div",{style:{fontSize:12,color:t.tx,opacity:.7}},"Serie")
-        ),
-        active.cardio>0&&h("div",{style:{textAlign:"center",padding:"10px 0"}},
-          h("div",{style:{fontSize:22,fontWeight:700,color:"#0369a1"}},active.cardio),
-          h("div",{style:{fontSize:12,color:"#0369a1",opacity:.8}},"min cardio")
-        )
+        h("div",{style:{textAlign:"center",padding:"10px 0"}},h("div",{style:{fontSize:22,fontWeight:700,color:t.tx}},active.exercises.length),h("div",{style:{fontSize:12,color:t.tx,opacity:.7}},"Esercizi")),
+        h("div",{style:{textAlign:"center",padding:"10px 0"}},h("div",{style:{fontSize:22,fontWeight:700,color:t.tx}},totalSets),h("div",{style:{fontSize:12,color:t.tx,opacity:.7}},"Serie")),
+        active.cardio>0&&h("div",{style:{textAlign:"center",padding:"10px 0"}},h("div",{style:{fontSize:22,fontWeight:700,color:"#0369a1"}},active.cardio),h("div",{style:{fontSize:12,color:"#0369a1",opacity:.8}},"min cardio"))
       )
     ),
     h("div",{className:"card"},
@@ -301,16 +292,17 @@ function Finish({active,onSave,onBack}){
       h("div",{style:{marginBottom:12}},h("label",{className:"lbl"},"Durata totale (minuti)"),h("input",{className:"inp",type:"number",value:dur,placeholder:"es. 75",onChange:e=>setDur(e.target.value)})),
       h("div",null,h("label",{className:"lbl"},"Calorie bruciate (kcal)"),h("input",{className:"inp",type:"number",value:kcal,placeholder:"es. 400",onChange:e=>setKcal(e.target.value)}))
     ),
-    h("button",{className:"btn btn-w",onClick:()=>onSave(parseInt(dur)||0,parseInt(kcal)||0),style:{background:t.a,color:"#fff",border:"none",padding:"13px",fontWeight:600,fontSize:15}},"Salva allenamento")
+    h("button",{className:"btn btn-w",onClick:()=>onSave(parseInt(dur)||0,parseInt(kcal)||0),style:{background:t.a,color:"#fff",border:"none",padding:"13px",fontWeight:600,fontSize:15}},editingId?"Salva modifiche":"Salva allenamento")
   );
 }
 
 // ── CALENDAR ──
-function Cal({workouts,onBack}){
+function Cal({workouts,onBack,onEdit,onDelete}){
   const now=new Date();
   const[yr,setYr]=useState(now.getFullYear());
   const[mo,setMo]=useState(now.getMonth());
   const[sel,setSel]=useState(null);
+  const[confirmDel,setConfirmDel]=useState(null); // workout to delete
 
   const daysInMo=new Date(yr,mo+1,0).getDate();
   const firstMon=(new Date(yr,mo,1).getDay()+6)%7;
@@ -331,6 +323,22 @@ function Cal({workouts,onBack}){
   function nextMo(){if(mo===11){setMo(0);setYr(yr+1);}else setMo(mo+1);setSel(null);}
 
   return h("div",{style:{padding:"14px 16px"}},
+    // Confirm delete sheet
+    confirmDel&&h(ConfirmSheet,{
+      title:"Elimina allenamento",
+      msg:`Vuoi eliminare l'allenamento ${confirmDel.type} del ${fmtDateLabel(confirmDel.date)}? L'operazione non è reversibile.`,
+      confirmLabel:"Elimina",
+      confirmColor:"#ef4444",
+      onConfirm:()=>{
+        onDelete(confirmDel.id);
+        setConfirmDel(null);
+        // if no more workouts on that day, deselect
+        const remaining=workouts.filter(w=>w.date===confirmDel.date&&w.id!==confirmDel.id);
+        if(!remaining.length)setSel(null);
+      },
+      onCancel:()=>setConfirmDel(null)
+    }),
+
     h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:14}},
       h("button",{className:"btn",onClick:onBack,style:{padding:"6px 12px"}},"←"),
       h("p",{style:{fontWeight:600,fontSize:17}},"Calendario")
@@ -378,27 +386,41 @@ function Cal({workouts,onBack}){
         h("span",{style:{fontSize:11,color:"#64748b"}},"Cardio")
       )
     ),
+
+    // ── Day detail ──
     sel&&h("div",{className:"card",style:{borderTop:"3px solid #3b82f6",marginTop:4}},
       h("p",{style:{fontWeight:600,fontSize:15,marginBottom:12}},`${String(sel).padStart(2,"0")}/${String(mo+1).padStart(2,"0")}/${yr}`),
-      selWks.length===0?h("p",{style:{color:"#94a3b8",fontSize:14}},"Nessun allenamento questo giorno"):
-      selWks.map((w,i)=>{
-        const t=TH[w.type];
-        return h("div",{key:i,style:{marginBottom:i<selWks.length-1?14:0,borderLeft:`3px solid ${t.a}`,paddingLeft:12}},
-          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
-            h("span",{style:{fontWeight:600,fontSize:14}},w.type),
-            h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
-              w.cardio>0&&h("span",{style:{fontSize:11,background:"#e0f2fe",color:"#0369a1",borderRadius:6,padding:"2px 7px",fontWeight:600}},`Cardio ${w.cardio}m`),
-              h("span",{style:{fontSize:12,color:"#64748b"}},`${w.duration?fmtMin(w.duration):""}${w.duration&&w.calories?" · ":""}${w.calories?w.calories+" kcal":""}`)
+      selWks.length===0
+        ?h("p",{style:{color:"#94a3b8",fontSize:14}},"Nessun allenamento questo giorno")
+        :selWks.map((w,i)=>{
+          const t=TH[w.type];
+          return h("div",{key:i,style:{marginBottom:i<selWks.length-1?20:0}},
+            // Header row with type + actions
+            h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}},
+              h("div",null,
+                h("span",{style:{fontWeight:700,fontSize:15,borderLeft:`3px solid ${t.a}`,paddingLeft:10}},w.type),
+                h("div",{style:{display:"flex",gap:6,marginTop:5,paddingLeft:10}},
+                  w.cardio>0&&h("span",{style:{fontSize:11,background:"#e0f2fe",color:"#0369a1",borderRadius:6,padding:"2px 7px",fontWeight:600}},`Cardio ${w.cardio}m`),
+                  (w.duration||w.calories)&&h("span",{style:{fontSize:11,color:"#94a3b8"}},`${w.duration?fmtMin(w.duration):""}${w.duration&&w.calories?" · ":""}${w.calories?w.calories+" kcal":""}`)
+                )
+              ),
+              // Edit / Delete buttons
+              h("div",{style:{display:"flex",gap:6,flexShrink:0}},
+                h("button",{onClick:()=>onEdit(w),style:{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:8,padding:"5px 12px",fontSize:12,fontWeight:600,cursor:"pointer",color:"#374151"}},"✏️ Modifica"),
+                h("button",{onClick:()=>setConfirmDel(w),style:{background:"#fff5f5",border:"1px solid #fecaca",borderRadius:8,padding:"5px 12px",fontSize:12,fontWeight:600,cursor:"pointer",color:"#dc2626"}},"🗑 Elimina")
+              )
+            ),
+            // Exercises
+            h("div",{style:{paddingLeft:10}},
+              w.exercises.map((ex,ei)=>h("div",{key:ei,style:{marginBottom:6}},
+                h("span",{style:{fontSize:13,fontWeight:600}},ex.name),
+                h("div",{style:{display:"flex",gap:5,flexWrap:"wrap",marginTop:3}},
+                  ex.sets.map((set,si)=>h("span",{key:si,style:{background:t.bg,color:t.tx,borderRadius:8,padding:"2px 8px",fontSize:12,fontWeight:600}},`${set.kg}kg×${set.reps}`))
+                )
+              ))
             )
-          ),
-          ...w.exercises.map((ex,ei)=>h("div",{key:ei,style:{marginBottom:6}},
-            h("span",{style:{fontSize:13,fontWeight:600}},ex.name),
-            h("div",{style:{display:"flex",gap:5,flexWrap:"wrap",marginTop:3}},
-              ex.sets.map((set,si)=>h("span",{key:si,style:{background:t.bg,color:t.tx,borderRadius:8,padding:"2px 8px",fontSize:12,fontWeight:600}},`${set.kg}kg×${set.reps}`))
-            )
-          ))
-        );
-      })
+          );
+        })
     )
   );
 }
@@ -406,20 +428,49 @@ function Cal({workouts,onBack}){
 // ── MAIN ──
 function GymApp(){
   const[screen,setScreen]=useState("home");
+  const[prevScreen,setPrevScreen]=useState("home");
   const[workouts,setWorkouts]=useState(()=>loadLS("gym_w",[]));
   const[lib,setLib]=useState(()=>loadLS("gym_e",{}));
   const[active,setActive]=useState(null);
+  const[editingId,setEditingId]=useState(null);
 
   function saveW(data){setWorkouts(data);saveLS("gym_w",data);}
   function saveE(data){setLib(data);saveLS("gym_e",data);}
-  function start(type){setActive({id:Date.now(),date:todayStr(),type,exercises:[],cardio:null});setScreen("workout");}
+
+  function goScreen(s){setPrevScreen(screen);setScreen(s);}
+
+  function start(type){
+    setActive({id:Date.now(),date:todayStr(),type,exercises:[],cardio:null});
+    setEditingId(null);
+    goScreen("workout");
+  }
+
+  function editWorkout(w){
+    setActive({...w});
+    setEditingId(w.id);
+    setPrevScreen("calendar");
+    setScreen("workout");
+  }
+
+  function deleteWorkout(id){
+    saveW(workouts.filter(w=>w.id!==id));
+  }
+
   function finish(dur,kcal){
     const w={...active,duration:dur,calories:kcal};
-    const nw=[...workouts,w];saveW(nw);
-    const nl={...lib};
-    w.exercises.forEach(e=>{nl[w.type]=nl[w.type]||[];if(!nl[w.type].includes(e.name))nl[w.type].push(e.name);});
-    saveE(nl);setActive(null);setScreen("home");
+    if(editingId){
+      saveW(workouts.map(ex=>ex.id===editingId?w:ex));
+    } else {
+      const nw=[...workouts,w];
+      saveW(nw);
+      const nl={...lib};
+      w.exercises.forEach(e=>{nl[w.type]=nl[w.type]||[];if(!nl[w.type].includes(e.name))nl[w.type].push(e.name);});
+      saveE(nl);
+    }
+    setActive(null);setEditingId(null);
+    setScreen(prevScreen==="calendar"?"calendar":"home");
   }
+
   function handleExport(){
     const data=JSON.stringify({workouts,lib,exportedAt:new Date().toISOString()},null,2);
     const blob=new Blob([data],{type:"application/json"});
@@ -438,10 +489,10 @@ function GymApp(){
   }
 
   return h("div",null,
-    screen==="home"    &&h(Home,{workouts,onStart:start,onCal:()=>setScreen("calendar"),onExport:handleExport,onImport:handleImport}),
-    screen==="workout" &&h(Workout,{active,setActive,lib,allWorkouts:workouts,onFinish:()=>setScreen("finish"),onBack:()=>{setActive(null);setScreen("home");}}),
-    screen==="finish"  &&h(Finish,{active,onSave:finish,onBack:()=>setScreen("workout")}),
-    screen==="calendar"&&h(Cal,{workouts,onBack:()=>setScreen("home")})
+    screen==="home"    &&h(Home,{workouts,onStart:start,onCal:()=>goScreen("calendar"),onExport:handleExport,onImport:handleImport}),
+    screen==="workout" &&h(Workout,{active,setActive,lib,allWorkouts:workouts,editingId,onFinish:()=>goScreen("finish"),onBack:()=>{setActive(null);setEditingId(null);setScreen(prevScreen);}}),
+    screen==="finish"  &&h(Finish,{active,editingId,onSave:finish,onBack:()=>goScreen("workout")}),
+    screen==="calendar"&&h(Cal,{workouts,onBack:()=>goScreen("home"),onEdit:editWorkout,onDelete:deleteWorkout})
   );
 }
 
